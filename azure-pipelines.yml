@@ -5,7 +5,7 @@ pool:
   name: self-hosted-linux
 
 variables:
-- group: datadog-aks-vars   # ONLY DATADOG_API_KEY stored here
+- group: datadog-aks-vars   # ONLY has DATADOG_API_KEY
 
 steps:
 - checkout: self
@@ -37,7 +37,7 @@ steps:
         echo "🔹 Fetching kubeconfig for $name..."
         az aks get-credentials -n $name -g $rg --overwrite-existing
 
-        # Skip Logic (Cluster already has Datadog)
+        # Skip logic if Datadog already exists
         if kubectl get namespace datadog >/dev/null 2>&1; then
           echo "✔ Datadog already installed on $name → Skipping..."
           continue

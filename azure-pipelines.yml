@@ -5,7 +5,7 @@ pool:
   name: self-hosted-linux
 
 variables:
-- group: datadog-aks-vars   # ONLY contains: DATADOG_API_KEY
+- group: datadog-aks-vars   # ONLY DATADOG_API_KEY stored here
 
 steps:
 - checkout: self
@@ -17,37 +17,42 @@ steps:
     scriptType: bash
     scriptLocation: inlineScript
     inlineScript: |
-      echo "🔹 Azure Subscription Context:"
-      az account show
-
-      echo "🔹 Discovering AKS clusters..."
-      clusters=$(az aks list --query "[].{name:name,rg:resourceGroup,env:tags.env}" -o tsv)
+      echo "🔹 Discovering AKS clusters in subscription..."
+      clusters=$(az aks list --query "[].{name:name,rg:resourceGroup}" -o tsv)
 
       if [ -z "$clusters" ]; then
-        echo "❌ No AKS clusters found in subscription!"
+        echo "❌ No AKS clusters found!"
         exit 1
       fi
 
       echo "🔹 Initializing Terraform..."
       terraform init
 
-      echo "$clusters" | while read name rg env; do
+      echo "$clusters" | while read name rg; do
         echo "======================================"
-        echo "🚀 Deploying Datadog Agent"
-        echo "Cluster:         $name"
-        echo "Resource Group:  $rg"
-        echo "Environment Tag: ${env:-unknown}"
+        echo "🚀 Cluster: $name"
+        echo "🗂 Resource Group: $rg"
         echo "======================================"
 
-        # Workspace isolation
+        echo "🔹 Fetching kubeconfig for $name..."
+        az aks get-credentials -n $name -g $rg --overwrite-existing
+
+        # Skip Logic (Cluster already has Datadog)
+        if kubectl get namespace datadog >/dev/null 2>&1; then
+          echo "✔ Datadog already installed on $name → Skipping..."
+          continue
+        fi
+
+        echo "🔹 Deploying Datadog to $name..."
+
         terraform workspace select $name || terraform workspace new $name
 
-        # Terraform deploy
         TF_VAR_aks_cluster_name=$name \
         TF_VAR_aks_resource_group=$rg \
-        TF_VAR_env=${env:-unknown} \
         TF_VAR_datadog_api_key=$(DATADOG_API_KEY) \
         terraform apply -auto-approve
 
         echo "✔ Completed deployment for $name"
       done
+
+      echo "🎉 Bulk Deployment Completed!"
